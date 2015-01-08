@@ -1,0 +1,23 @@
+{
+  "name": "pf-socks5",
+  "version": "1.0.0",
+  "description": "This script allows various perfsonar instances to access LHCONE instance via sock5/redsocks.",
+  "main": "app.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opensciencegrid/pf-socks5.git"
+  },
+  "author": "Soichi Hayashi <hayashis@iu.edu>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/opensciencegrid/pf-socks5/issues"
+  },
+  "homepage": "https://github.com/opensciencegrid/pf-socks5",
+  "dependencies": {
+    "async": "^0.9.0",
+    "ping": "^0.1.9"
+  }
+}
