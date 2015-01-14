@@ -67,6 +67,7 @@ function load_meshconfig(done) {
             done(null, json);
         });
     }).on('error', function(e) {
-          console.log("Got error: ", e);
+        console.log("Got error: ", e);
     });
 }
+
