@@ -1,1 +1,1 @@
-0 * * * * root cd /usr/local/pf-socks5 && ./update.sh >> /var/log/pf-socks5.log
+0 * * * * root (cd /usr/local/pf-socks5 && ./update.sh) >> /var/log/pf-socks5.log
