@@ -30,7 +30,7 @@ start)
             echo "starting ssh tunnel for aglt2"
             ssh -o StrictHostKeyChecking=no -fqND localhost:1080 -i secrets/sock5_proxy.id_rsa root@maddash.aglt2.org &
             sleep 1
-            ps -eopid,uid,cmd | grep [a]glt2 | cut -d " " -f 2 >> $PIDFILE
+            ps -eopid,uid,cmd | grep [s]ock5_proxy.id_rsa | grep ssh | cut -d " " -f 2 >> $PIDFILE
         fi
 ;;
 status)
