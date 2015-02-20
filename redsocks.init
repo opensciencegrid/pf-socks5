@@ -1,70 +1,224 @@
 #!/bin/bash
-# redsocks daemon
+
+# redsocks daemon initscript
+
 # chkconfig: 345 20 80
 # description: redsocks daemon
 # processname: redsocks
 
-DAEMON_PATH="/usr/local/pf-socks5"
-
-DAEMON=redsocks
-#DAEMONOPTS="-my opts"
-DAEMONOPTS=""
+DAEMON_DIR="/usr/local/pf-socks5"
+DAEMON="redsocks"
+DAEMON_PATH="$DAEMON_DIR/$DAEMON"
 
 NAME=redsocks
 DESC="redsocks/socks5 startup script"
-PIDFILE=$DAEMON_PATH/$NAME.pid
-SCRIPTNAME=/etc/init.d/$NAME
+PIDFILE="$DAEMON_DIR/$NAME.pid"
+DAEMONOPTS="-p $PIDFILE"
+SCRIPTNAME="/etc/init.d/$NAME"
+
+TUNNELS=("1080,root@maddash.aglt2.org")
+TIMEOUT=5
+
+. /etc/init.d/functions
+
+function sshtunnelpid() {
+    local ifsave="$IFS"
+    [[ -z $1 ]] && return 999
+    IFS=","
+    local split=($1)
+    IFS="$ifsave"
+    local port=${split[0]}
+    local dest=${split[1]}
+    local socket="$DAEMON_DIR/${dest#*@}.socket"
+    if [[ ! -S $socket ]]; then
+	return 888
+    fi
+    local check=$(ssh -O check -S $socket localhost:$port 2>&1)
+    local retval=$?
+    [[ $retval -ne 0 ]] && return $retval
+    local pid=$(echo "$check" | grep -Eo '[[:digit:]]+')
+    echo $pid
+    return $retval
+}
+
+function sshtunnelstart() {
+    local ifsave="$IFS"
+    [[ -z $1 ]] && return 999
+    IFS=","
+    local split=($1)
+    IFS="$ifsave"
+    local port=${split[0]}
+    local dest=${split[1]}
+    local socket="$DAEMON_DIR/${dest#*@}.socket"
+    ssh -o "StrictHostKeyChecking=no" -o "ControlMaster=yes" -fqND localhost:$port -S $socket -i secrets/sock5_proxy.id_rsa $dest
+    local retval=$?
+    [[ $retval -ne 0 ]] && return $retval
+    local starttime=$(date +%s)
+    while [[ ! -S $socket ]]; do
+	usleep 100000
+	local curtime=$(date +%s)
+	if (( (curtime - starttime) >= TIMEOUT )); then
+	    return 888
+	fi
+    done
+    return $retval
+}
+
+function sshtunnelstop() {
+    local ifsave="$IFS"
+    [[ -z $1 ]] && return 999
+    IFS=","
+    local split=($1)
+    IFS="$ifsave"
+    local port=${split[0]}
+    local dest=${split[1]}
+    local socket="$DAEMON_DIR/${dest#*@}.socket"
+    local check=$(ssh -O check -S $socket localhost:$port 2>&1)
+    local retval=$?
+    [[ $retval -ne 0 ]] && return $retval
+    local pid=$(echo "$check" | grep -Eo '[[:digit:]]+')
+    ssh -O exit -S $socket localhost:$port >&/dev/null
+    retval=$?
+    [[ $retval -ne 0 ]] && return $retval
+    local starttime=$(date +%s)
+    while [[ -S $socket ]] || ps $pid >&/dev/null; do
+	usleep 100000
+	local curtime=$(date +%s)
+	if (( (curtime - starttime) >= TIMEOUT )); then
+	    return 888
+	fi
+    done
+    return $retval
+}
+
+function rsstart() {
+    local RETVAL=0 tunnel
+    [[ -x $DAEMON_PATH ]] || exit 1
+    if [[ -e $PIDFILE ]]; then
+	local PID=$(< $PIDFILE)
+	if ps $PID >&/dev/null; then
+	    echo "Not starting $NAME, because it is already running."
+	    return 0
+	else
+	    echo "Removing old pidfile."
+	    rm -f $PIDFILE
+	fi
+    fi
+    echo -n $"Starting $NAME: "
+    pushd $DAEMON_DIR >&/dev/null
+    daemon $DAEMON_PATH $DAEMONOPTS
+    (( RETVAL += $? ))
+    echo
+    popd >&/dev/null
+    return $RETVAL
+}
+
+function rsstart_tunnels() {
+    echo "Starting ssh tunnels:"
+    local failures=()
+    for tunnel in "${TUNNELS[@]}"; do
+	echo -n "${tunnel#*@}: "
+	local PID=$(sshtunnelpid $tunnel)
+	if [[ -n $PID ]]; then
+	    echo "(already running; doing nothing)"
+	    continue
+	fi
+	sshtunnelstart $tunnel
+	local retval=$?
+	if [[ $retval -eq 0 ]]; then
+	    success; echo
+	else
+	    (( RETVAL += retval ))
+	    failure; echo
+	fi
+    done
+    return $RETVAL
+}
+
+function rsstatus() {
+    status -p $PIDFILE $DAEMON
+}
+
+function rsstatus_tunnels() {
+    local RETVAL=0 tunnel
+    for tunnel in "${TUNNELS[@]}"; do
+	local PID=$(sshtunnelpid $tunnel)
+	if [[ -n $PID ]]; then
+	    echo "${tunnel#*@} tunnel running with PID $PID"
+	else
+	    echo "${tunnel#*@} tunnel is dead"
+	    (( ++RETVAL ))
+	fi
+    done
+    return $RETVAL
+}
+
+function rsstop() {
+    local RETVAL=0
+    if [[ -e $PIDFILE ]]; then
+	local PID=$(< $PIDFILE)
+	echo -n "Stopping $NAME: "
+	killproc -p $PIDFILE $DAEMON_PATH -TERM
+	echo
+	local retval=$?
+	while (checkpid $PID); do
+	    usleep 100000
+	done
+	if [[ $retval -eq 0 ]]; then
+	    rm -f $PIDFILE
+	else
+	    (( RETVAL += retval ))
+	fi
+    else
+	echo "Stopping $DAEMON: Pidfile does not exist; doing nothing"
+	(( ++RETVAL ))
+    fi
+    return $RETVAL
+}
+
+function rsstop_tunnels() {
+    echo "Stopping ssh tunnels:"
+    local RETVAL=0 tunnel
+    for tunnel in "${TUNNELS[@]}"; do
+	echo -n "${tunnel#*@}: "
+	local PID=$(sshtunnelpid $tunnel)
+	if [[ -z $PID ]]; then
+	    echo "(not running; doing nothing)"
+	    continue
+	fi
+	sshtunnelstop $tunnel
+	local retval=$?
+	if [[ $retval -eq 0 ]]; then
+	    success; echo
+	else
+	    (( RETVAL += retval ))
+	    failure; echo
+	fi
+    done
+    return $RETVAL
+}
 
 case "$1" in
-start)
-        printf "%-50s" "Starting $NAME..."
-        cd $DAEMON_PATH
-        ./$DAEMON
-        PID=`pgrep $DAEMON`
-        if [ -z "$PID" ]; then
-            printf "%s\n" "Fail"
-        else
-            echo $PID > $PIDFILE
-            printf "%s\n" "OK"
-
-            echo "starting ssh tunnel for aglt2"
-            ssh -o StrictHostKeyChecking=no -fqND localhost:1080 -i secrets/sock5_proxy.id_rsa root@maddash.aglt2.org &
-            sleep 1
-            ps -eopid,uid,cmd | grep [s]ock5_proxy.id_rsa | grep ssh | cut -d " " -f 2 >> $PIDFILE
-        fi
-;;
-status)
-        printf "%-50s" "Checking $NAME..."
-        if [ -f $PIDFILE ]; then
-            PID=`cat $PIDFILE`
-            if [ -z "`ps axf | grep ${PID} | grep -v grep`" ]; then
-                printf "%s\n" "Process dead but pidfile exists"
-            else
-                echo "Running"
-            fi
-        else
-            printf "%s\n" "Service not running"
-        fi
-;;
-stop)
-        printf "%-50s" "Stopping $NAME"
-            PID=`cat $PIDFILE`
-            cd $DAEMON_PATH
-        if [ -f $PIDFILE ]; then
-            kill -HUP $PID
-            printf "%s\n" "Ok"
-            rm -f $PIDFILE
-        else
-            printf "%s\n" "pidfile not found"
-        fi
-;;
-
-restart)
-        $0 stop
-        $0 start
-;;
-
-*)
-        echo "Usage: $0 {status|start|stop|restart}"
-        exit 1
+    start)
+	rsstart || exit $?
+	rsstart_tunnels
+	;;
+    stop)
+	rsstop_tunnels || exit $?
+	rsstop
+	;;
+    status)
+	rsstatus
+	rsstatus_tunnels
+	;;
+    restart)
+	rsstop_tunnels || exit $?
+	rsstop || exit $?
+	rsstart || exit $?
+	rsstart_tunnels
+	;;
+    *)
+	echo "Usage: $0 {status|start|stop|restart)"
+	exit 1
+	;;
 esac
