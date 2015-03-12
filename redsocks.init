@@ -77,7 +77,9 @@ function sshtunnelstop() {
     local retval=$?
     [[ $retval -ne 0 ]] && return $retval
     local pid=$(echo "$check" | grep -Eo '[[:digit:]]+')
-    ssh -O exit -S $socket localhost:$port >&/dev/null
+    local ppid=$(ps --no-headers -o ppid $pid)
+    kill -TERM $ppid
+#    ssh -O exit -S $socket localhost:$port >&/dev/null
     retval=$?
     [[ $retval -ne 0 ]] && return $retval
     local starttime=$(date +%s)
