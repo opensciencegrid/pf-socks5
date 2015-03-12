@@ -50,7 +50,7 @@ function sshtunnelstart() {
     local port=${split[0]}
     local dest=${split[1]}
     local socket="$DAEMON_DIR/${dest#*@}.socket"
-    autossh -f -o "StrictHostKeyChecking=no" -o "ControlMaster=yes" -ND localhost:$port -S $socket -i $DAEMON_DIR/secrets/sock5_proxy.id_rsa $dest
+    autossh -M 20000 -f -o "StrictHostKeyChecking=no" -o "ControlMaster=yes" -ND localhost:$port -S $socket -i $DAEMON_DIR/secrets/sock5_proxy.id_rsa $dest
     local retval=$?
     [[ $retval -ne 0 ]] && return $retval
     local starttime=$(date +%s)
