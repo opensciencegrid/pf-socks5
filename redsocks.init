@@ -95,6 +95,7 @@ function sshtunnelstop() {
 
 function rsstart() {
     local RETVAL=0 tunnel
+    ulimit -n 8192
     [[ -x $DAEMON_PATH ]] || exit 1
     if [[ -e $PIDFILE ]]; then
 	local PID=$(< $PIDFILE)
