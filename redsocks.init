@@ -16,6 +16,7 @@ PIDFILE="$DAEMON_DIR/$NAME.pid"
 DAEMONOPTS="-p $PIDFILE"
 SCRIPTNAME="/etc/init.d/$NAME"
 
+#TUNNELS=("1081,root@msuinfo.aglt2.org", "1080,root@maddash.aglt2.org")
 TUNNELS=("1080,root@maddash.aglt2.org")
 TIMEOUT=5
 
